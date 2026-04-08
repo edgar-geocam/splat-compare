@@ -19,10 +19,10 @@ Opens a browser at `http://localhost:8080`. Accessible from other machines at `h
 ```bash
 # Compare iterations of the same training
 python3 splat-compare/viewer.py \
-    --splats output/fastgs-nwic-fullres-chunk-0/point_cloud/iteration_7000/point_cloud.ply \
-             output/fastgs-nwic-fullres-chunk-0/point_cloud/iteration_30000/point_cloud.ply \
-             output/fastgs-nwic-fullres-chunk-0/point_cloud/iteration_60000/point_cloud.ply \
-    --cameras output/fastgs-nwic-fullres-chunk-0/cameras.json
+    --splats output/fastgs-fullres-chunk-0/point_cloud/iteration_7000/point_cloud.ply \
+             output/fastgs-fullres-chunk-0/point_cloud/iteration_30000/point_cloud.ply \
+             output/fastgs-fullres-chunk-0/point_cloud/iteration_60000/point_cloud.ply \
+    --cameras output/fastgs-fullres-chunk-0/cameras.json
 
 # Compare different methods on the same dataset
 python3 splat-compare/viewer.py \
@@ -32,9 +32,9 @@ python3 splat-compare/viewer.py \
 
 # Compare chunks
 python3 splat-compare/viewer.py \
-    --splats output/fastgs-nwic-fullres-chunk-0/point_cloud/iteration_60000/point_cloud.ply \
-             output/fastgs-nwic-fullres-chunk-1/point_cloud/iteration_60000/point_cloud.ply \
-             output/fastgs-nwic-fullres-chunk-2/point_cloud/iteration_60000/point_cloud.ply \
+    --splats output/fastgs-fullres-chunk-0/point_cloud/iteration_60000/point_cloud.ply \
+             output/fastgs-fullres-chunk-1/point_cloud/iteration_60000/point_cloud.ply \
+             output/fastgs-fullres-chunk-2/point_cloud/iteration_60000/point_cloud.ply \
     --cameras output/fastgs-nwic-fullres-chunk-0/cameras.json
 ```
 
