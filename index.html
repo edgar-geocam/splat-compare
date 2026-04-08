@@ -27,27 +27,29 @@
         }
         #error-overlay pre { margin-top: 10px; color: #c66; white-space: pre-wrap; font-size: 11px; }
 
-        #panels {
-            display: flex;
+        #viewport {
+            position: relative;
             width: 100%;
             height: calc(100vh - 52px);
         }
-
-        .panel {
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-            background: #0a0a0a;
+        #viewport canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
         }
-        .panel + .panel { border-left: 1px solid #2a2a2a; }
 
         .panel-label {
-            position: absolute; top: 8px; left: 8px;
+            position: absolute; top: 8px;
             background: rgba(0, 0, 0, 0.8);
             padding: 3px 10px; border-radius: 3px;
             font-size: 12px; font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
             color: #aaa; z-index: 10; pointer-events: none;
             border: 1px solid #333;
+        }
+
+        .panel-divider {
+            position: absolute; top: 0; bottom: 0; width: 1px;
+            background: #2a2a2a; z-index: 10; pointer-events: none;
         }
 
         #controls {
@@ -92,8 +94,7 @@
         .ctrl-text {
             font-size: 11px; color: #555;
             font-family: 'SF Mono', 'Consolas', monospace;
-            white-space: nowrap;
-            user-select: none;
+            white-space: nowrap; user-select: none;
         }
         .ctrl-text.bright { color: #888; }
 
@@ -113,11 +114,7 @@
     </div>
     <div id="error-overlay"></div>
 
-    <div id="panels">
-        <div class="panel" id="panel-0"><div class="panel-label" id="label-0"></div></div>
-        <div class="panel" id="panel-1"><div class="panel-label" id="label-1"></div></div>
-        <div class="panel" id="panel-2"><div class="panel-label" id="label-2"></div></div>
-    </div>
+    <div id="viewport"></div>
 
     <div id="controls">
         <button id="play-btn" title="Play/Pause (Space)">&#9654;</button>
@@ -175,18 +172,12 @@
         ]);
 
         // ── Process camera poses ─────────────────────────────────
-        // cameras.json stores:
-        //   position: camera center in world coords
-        //   rotation: camera-to-world rotation matrix (R_colmap^T)
-        //   fx, fy: focal lengths in pixels
-        //   width, height: image dimensions
         const cameras = camerasRaw
             .sort((a, b) => a.img_name.localeCompare(b.img_name))
             .map(cam => {
                 const R = cam.rotation;
                 const p = cam.position;
 
-                // Build camera-to-world matrix
                 const m = new THREE.Matrix4();
                 m.set(
                     R[0][0], R[0][1], R[0][2], p[0],
@@ -211,37 +202,41 @@
         }
 
         const totalFrames = cameras.length;
-
-        // ── Set up panels ────────────────────────────────────────
         const numPanels = config.numSplats;
-        for (let i = numPanels; i < 3; i++) {
-            document.getElementById(`panel-${i}`).style.display = 'none';
-        }
-        for (let i = 0; i < numPanels; i++) {
-            document.getElementById(`label-${i}`).textContent = config.labels[i];
-        }
 
-        // ── Create viewers ───────────────────────────────────────
-        loadStatusEl.textContent = 'Creating viewers...';
-        const viewers = [];
+        // ── Set up single renderer ───────────────────────────────
+        loadStatusEl.textContent = 'Creating renderer...';
+        const viewportEl = document.getElementById('viewport');
+        const W = viewportEl.clientWidth;
+        const H = viewportEl.clientHeight;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(W, H);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.autoClear = false;
+        viewportEl.appendChild(renderer.domElement);
+
+        // ── Create camera ────────────────────────────────────────
+        const panelW = Math.floor(W / numPanels);
+        const camera = new THREE.PerspectiveCamera(
+            cameras[0].fov, panelW / H, 0.1, 1000
+        );
+
+        // ── Create scenes with DropInViewer per splat ────────────
+        loadStatusEl.textContent = 'Loading splats...';
+        const panels = [];
 
         for (let i = 0; i < numPanels; i++) {
-            const panel = document.getElementById(`panel-${i}`);
-            const viewer = new GaussianSplats3D.Viewer({
-                rootElement: panel,
-                selfDrivenMode: false,
-                cameraUp: [0, -1, 0],
-                initialCameraPosition: cameras[0].position.toArray(),
-                initialCameraLookAt: [
-                    cameras[0].position.x,
-                    cameras[0].position.y,
-                    cameras[0].position.z + 1,
-                ],
+            const scene = new THREE.Scene();
+            const dropIn = new GaussianSplats3D.DropInViewer({
+                gpuAcceleratedSort: true,
+                sharedMemoryForWorkers: false,
             });
-            viewers.push(viewer);
+            scene.add(dropIn);
+            panels.push({ scene, dropIn });
         }
 
-        // ── Load splats in parallel ──────────────────────────────
+        // Load all splats in parallel
         const loaded = new Array(numPanels).fill(false);
         function updateLoadStatus() {
             const done = loaded.filter(Boolean).length;
@@ -249,8 +244,8 @@
         }
 
         await Promise.all(
-            viewers.map((viewer, i) =>
-                viewer.addSplatScene(`/splat/${i}.ply`, {
+            panels.map((panel, i) =>
+                panel.dropIn.addSplatScene(`/splat/${i}.ply`, {
                     splatAlphaRemovalThreshold: 5,
                 }).then(() => {
                     loaded[i] = true;
@@ -258,6 +253,22 @@
                 })
             )
         );
+
+        // ── Add HTML labels and dividers ─────────────────────────
+        for (let i = 0; i < numPanels; i++) {
+            const label = document.createElement('div');
+            label.className = 'panel-label';
+            label.style.left = (i * panelW + 8) + 'px';
+            label.textContent = config.labels[i];
+            viewportEl.appendChild(label);
+
+            if (i > 0) {
+                const divider = document.createElement('div');
+                divider.className = 'panel-divider';
+                divider.style.left = (i * panelW) + 'px';
+                viewportEl.appendChild(divider);
+            }
+        }
 
         loadingEl.classList.add('hidden');
 
@@ -282,37 +293,19 @@
 
         progressEl.addEventListener('pointerdown', () => { dragging = true; });
         progressEl.addEventListener('pointerup', () => { dragging = false; });
-        progressEl.addEventListener('input', () => {
-            t = parseFloat(progressEl.value);
-        });
+        progressEl.addEventListener('input', () => { t = parseFloat(progressEl.value); });
 
         speedRange.addEventListener('input', () => {
             speed = parseInt(speedRange.value);
             speedValEl.textContent = speed;
         });
 
-        // ── Keyboard shortcuts ───────────────────────────────────
         document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space') {
-                e.preventDefault();
-                togglePlay();
-            } else if (e.code === 'ArrowRight') {
-                e.preventDefault();
-                t = Math.min(t + 1, totalFrames - 1);
-                progressEl.value = t;
-            } else if (e.code === 'ArrowLeft') {
-                e.preventDefault();
-                t = Math.max(t - 1, 0);
-                progressEl.value = t;
-            } else if (e.code === 'BracketRight') {
-                speed = Math.min(speed + 5, 200);
-                speedRange.value = speed;
-                speedValEl.textContent = speed;
-            } else if (e.code === 'BracketLeft') {
-                speed = Math.max(speed - 5, 1);
-                speedRange.value = speed;
-                speedValEl.textContent = speed;
-            }
+            if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+            else if (e.code === 'ArrowRight') { e.preventDefault(); t = Math.min(t + 1, totalFrames - 1); progressEl.value = t; }
+            else if (e.code === 'ArrowLeft') { e.preventDefault(); t = Math.max(t - 1, 0); progressEl.value = t; }
+            else if (e.code === 'BracketRight') { speed = Math.min(speed + 5, 200); speedRange.value = speed; speedValEl.textContent = speed; }
+            else if (e.code === 'BracketLeft') { speed = Math.max(speed - 5, 1); speedRange.value = speed; speedValEl.textContent = speed; }
         });
 
         function togglePlay() {
@@ -339,40 +332,44 @@
         function animate(time) {
             requestAnimationFrame(animate);
 
-            // Advance time
             if (playing && !dragging) {
                 const dt = lastTime ? (time - lastTime) / 1000 : 0;
                 t += dt * speed;
-                if (t >= totalFrames - 1) {
-                    t = 0;
-                }
+                if (t >= totalFrames - 1) t = 0;
                 progressEl.value = t;
             }
             lastTime = time;
 
-            // Update frame counter
             frameInfoEl.textContent = `${Math.floor(t) + 1} / ${totalFrames}`;
 
-            // Get interpolated pose
             const pose = getPose(t);
+            camera.position.copy(pose.position);
+            camera.quaternion.copy(pose.quaternion);
+            camera.fov = pose.fov;
+            camera.aspect = panelW / H;
+            camera.updateProjectionMatrix();
 
-            // Apply to all viewers
-            for (const viewer of viewers) {
-                try {
-                    const cam = viewer.camera;
-                    cam.position.copy(pose.position);
-                    cam.quaternion.copy(pose.quaternion);
-                    cam.fov = pose.fov;
-                    cam.updateProjectionMatrix();
-                    viewer.update();
-                    viewer.render();
-                } catch (e) {
-                    // Don't break the loop on render errors
-                }
+            renderer.clear();
+            renderer.setScissorTest(true);
+
+            for (let i = 0; i < numPanels; i++) {
+                const x = i * panelW;
+                renderer.setViewport(x, 0, panelW, H);
+                renderer.setScissor(x, 0, panelW, H);
+                renderer.render(panels[i].scene, camera);
             }
         }
 
         requestAnimationFrame(animate);
+
+        // ── Handle resize ────────────────────────────────────────
+        window.addEventListener('resize', () => {
+            const newW = viewportEl.clientWidth;
+            const newH = viewportEl.clientHeight;
+            renderer.setSize(newW, newH);
+            // Labels/dividers would need repositioning on resize
+            // but keeping it simple for now
+        });
     }
     </script>
 </body>
