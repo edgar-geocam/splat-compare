@@ -159,7 +159,7 @@
     try {
         loadStatusEl.textContent = 'Loading renderer...';
         const GaussianSplats3D = await import(
-            'https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.6/build/gaussian-splats-3d.module.min.js'
+            'https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js'
         );
         await init(GaussianSplats3D);
     } catch (e) {
