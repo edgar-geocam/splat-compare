@@ -178,11 +178,13 @@
                 const R = cam.rotation;
                 const p = cam.position;
 
+                // R is camera-to-world (R_colmap^T). COLMAP has Y-down, Z-forward.
+                // Three.js expects Y-up, Z-backward. Negate Y and Z columns.
                 const m = new THREE.Matrix4();
                 m.set(
-                    R[0][0], R[0][1], R[0][2], p[0],
-                    R[1][0], R[1][1], R[1][2], p[1],
-                    R[2][0], R[2][1], R[2][2], p[2],
+                    R[0][0], -R[0][1], -R[0][2], p[0],
+                    R[1][0], -R[1][1], -R[1][2], p[1],
+                    R[2][0], -R[2][1], -R[2][2], p[2],
                     0, 0, 0, 1
                 );
 
@@ -219,7 +221,7 @@
         // ── Create camera ────────────────────────────────────────
         const panelW = Math.floor(W / numPanels);
         const camera = new THREE.PerspectiveCamera(
-            cameras[0].fov, panelW / H, 0.1, 1000
+            cameras[0].fov, panelW / H, 0.01, 10000
         );
 
         // ── Create scenes with DropInViewer per splat ────────────
@@ -356,6 +358,10 @@
                 const x = i * panelW;
                 renderer.setViewport(x, 0, panelW, H);
                 renderer.setScissor(x, 0, panelW, H);
+                // Explicitly update the DropInViewer sort before rendering
+                if (panels[i].dropIn.update) {
+                    panels[i].dropIn.update(renderer, camera);
+                }
                 renderer.render(panels[i].scene, camera);
             }
         }
